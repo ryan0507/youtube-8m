@@ -22,39 +22,39 @@ IMAGE_KEY = 'image/encoded'
 LABEL_KEY = 'clip/label/index'
 
 
-def _process_image(image: tf.Tensor,
-                   is_training: bool = True,
-                   num_frames: int = 32,
-                   stride: int = 1,
-                   num_test_clips: int = 1,
-                   min_resize: int = 224,
-                   crop_size: int = 200,
-                   zero_centering_image: bool = False,
-                   seed: Optional[int] = None) -> tf.Tensor:
-  """Processes a serialized image tensor.
-  Args:
-    image: Input Tensor of shape [timesteps] and type tf.string of serialized
-      frames.
-    is_training: Whether or not in training mode. If True, random sample, crop
-      and left right flip is used.
-    num_frames: Number of frames per subclip.
-    stride: Temporal stride to sample frames.
-    num_test_clips: Number of test clips (1 by default). If more than 1, this
-      will sample multiple linearly spaced clips within each video at test time.
-      If 1, then a single clip in the middle of the video is sampled. The clips
-      are aggreagated in the batch dimension.
-    min_resize: Frames are resized so that min(height, width) is min_resize.
-    crop_size: Final size of the frame after cropping the resized frames. Both
-      height and width are the same.
-    zero_centering_image: If True, frames are normalized to values in [-1, 1].
-      If False, values in [0, 1].
-    seed: A deterministic seed to use when sampling.
-  Returns:
-    Processed frames. Tensor of shape
-      [num_frames * num_test_clips, crop_size, crop_size, 3].
-  """
+# def _process_image(image: tf.Tensor,
+#                    is_training: bool = True,
+#                    num_frames: int = 32,
+#                    stride: int = 1,
+#                    num_test_clips: int = 1,
+#                    min_resize: int = 224,
+#                    crop_size: int = 200,
+#                    zero_centering_image: bool = False,
+#                    seed: Optional[int] = None) -> tf.Tensor:
+#   """Processes a serialized image tensor.
+#   Args:
+#     image: Input Tensor of shape [timesteps] and type tf.string of serialized
+#       frames.
+#     is_training: Whether or not in training mode. If True, random sample, crop
+#       and left right flip is used.
+#     num_frames: Number of frames per subclip.
+#     stride: Temporal stride to sample frames.
+#     num_test_clips: Number of test clips (1 by default). If more than 1, this
+#       will sample multiple linearly spaced clips within each video at test time.
+#       If 1, then a single clip in the middle of the video is sampled. The clips
+#       are aggreagated in the batch dimension.
+#     min_resize: Frames are resized so that min(height, width) is min_resize.
+#     crop_size: Final size of the frame after cropping the resized frames. Both
+#       height and width are the same.
+#     zero_centering_image: If True, frames are normalized to values in [-1, 1].
+#       If False, values in [0, 1].
+#     seed: A deterministic seed to use when sampling.
+#   Returns:
+#     Processed frames. Tensor of shape
+#       [num_frames * num_test_clips, crop_size, crop_size, 3].
+#   """
 
-  return
+#   return
 
 
 def _postprocess_image(image: tf.Tensor,
@@ -80,6 +80,7 @@ def _postprocess_image(image: tf.Tensor,
   return image
 
 
+################ called at Parser ################
 def _process_label(label: tf.Tensor,
                    one_hot_label: bool = True,
                    num_classes: Optional[int] = None) -> tf.Tensor:
@@ -88,6 +89,15 @@ def _process_label(label: tf.Tensor,
   return label
 
 
+def prepare_reader():
+
+
+################ called at Parser ################
+def get_video_matrix():
+
+
+
+################ line 235 - 256 ################
 class Decoder(decoder.Decoder):
   """A tf.Example decoder for classification task."""
 
@@ -97,8 +107,9 @@ class Decoder(decoder.Decoder):
   def decode(self, serialized_example):
     """Parses a single tf.Example into image and label tensors."""
 
-    return {}
+    return {} # return contexts, features
 
+################ line 258 - 330 ################
 class Parser(parser.Parser):
   """Parses a video and label dataset."""
 
@@ -123,7 +134,7 @@ class Parser(parser.Parser):
 
     return {'image': image}, label
 
-
+################ line 331 - 347 ################
 class PostBatchProcessor(object):
   """Processes a video and label dataset which is batched."""
 
