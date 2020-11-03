@@ -161,13 +161,40 @@ def get_video_matrix():
 class Decoder(decoder.Decoder):
   """A tf.Example decoder for classification task."""
 
-  def __init__(self, image_key: str = IMAGE_KEY, label_key: str = LABEL_KEY):
+  def __init__(self,
+               input_params: exp_cfg.DataConfig): # image_key: str = IMAGE_KEY, label_key: str = LABEL_KEY
 
+    self._segment_labels = input_params.segment_labels
+    self._feature_names = input_params.feature_names
+    self._context_features = {
+        "id": tf.io.FixedLenFeature([], tf.string),
+    }
+    if self._segment_labels:
+      self._context_features.update({
+          # There is no need to read end-time given we always assume the segment
+          # has the same size.
+          "segment_labels": tf.io.VarLenFeature(tf.int64),
+          "segment_start_times": tf.io.VarLenFeature(tf.int64),
+          "segment_scores": tf.io.VarLenFeature(tf.float32)
+      })
+    else:
+      self._context_features.update({"labels": tf.io.VarLenFeature(tf.int64)})
+    
+    self._sequence_features = {
+        feature_name: tf.io.FixedLenSequenceFeature([], dtype=tf.string)
+        for feature_name in self._feature_names
+    }
 
   def decode(self, serialized_example):
     """Parses a single tf.Example into image and label tensors."""
 
-    return {} # return contexts, features
+    # Read/parse frame/segment-level labels.
+    contexts, features = tf.io.parse_single_sequence_example(
+        serialized_example,
+        context_features=self._context_features,
+        sequence_features=self._sequence_features)
+
+    return contexts, features
 
 ################ line 258 - 330 ################
 class Parser(parser.Parser):
