@@ -57,27 +57,90 @@ LABEL_KEY = 'clip/label/index'
 #   return
 
 
-def _postprocess_image(image: tf.Tensor,
-                       is_training: bool = True,
-                       num_frames: int = 32,
-                       num_test_clips: int = 1) -> tf.Tensor:
+def _postprocess_image(video_matrix,
+                       num_frames,
+                       contexts,
+                       segment_labels,
+                       segment_size,
+                       num_classes) -> Dict[str, tf.Tensor]:
+
   """Processes a batched Tensor of frames.
   The same parameters used in process should be used here.
   Args:
-    image: Input Tensor of shape [batch, timesteps, height, width, 3].
-    is_training: Whether or not in training mode. If True, random sample, crop
-      and left right flip is used.
-    num_frames: Number of frames per subclip.
-    num_test_clips: Number of test clips (1 by default). If more than 1, this
-      will sample multiple linearly spaced clips within each video at test time.
-      If 1, then a single clip in the middle of the video is sampled. The clips
-      are aggreagated in the batch dimension.
+
   Returns:
-    Processed frames. Tensor of shape
-      [batch * num_test_clips, num_frames, height, width, 3].
+
   """
 
-  return image
+  if segment_labels:
+    start_times = contexts["segment_start_times"].values
+    # Here we assume all the segments that started at the same start time has
+    # the same segment_size.
+    uniq_start_times, seg_idxs = tf.unique(start_times,
+                                           out_idx=tf.dtypes.int64)
+    # TODO(zhengxu): Ensure the segment_sizes are all same.
+    # Range gather matrix, e.g., [[0,1,2],[1,2,3]] for segment_size == 3.
+    range_mtx = tf.expand_dims(uniq_start_times, axis=-1) + tf.expand_dims(
+        tf.range(0, segment_size, dtype=tf.int64), axis=0)
+
+    # Shape: [num_segment, segment_size, feature_dim].
+    batch_video_matrix = tf.gather_nd(video_matrix,
+                                      tf.expand_dims(range_mtx, axis=-1))
+    num_segment = tf.shape(batch_video_matrix)[0]
+    batch_video_ids = tf.reshape(tf.tile([contexts["id"]], [num_segment]),
+                                 (num_segment,))
+    batch_frames = tf.reshape(tf.tile([segment_size], [num_segment]),
+                              (num_segment,))
+
+    # For segment labels, all labels are not exhausively rated. So we only
+    # evaluate the rated labels.
+
+    ########### process label parts -> call _process_label() ###########
+    # # Label indices for each segment, shape: [num_segment, 2].
+    # label_indices = tf.stack([seg_idxs, contexts["segment_labels"].values],
+    #                          axis=-1)
+    # label_values = contexts["segment_scores"].values
+    # sparse_labels = tf.sparse.SparseTensor(label_indices, label_values,
+    #                                        (num_segment, num_classes))
+    # batch_labels = tf.sparse.to_dense(sparse_labels, validate_indices=False)
+
+    # sparse_label_weights = tf.sparse.SparseTensor(
+    #     label_indices, tf.ones_like(label_values, dtype=tf.float32),
+    #     (num_segment, num_classes))
+    # batch_label_weights = tf.sparse.to_dense(sparse_label_weights,
+    #                                          validate_indices=False)
+    
+  else:
+    ########### process label parts -> call _process_label() ###########
+    # # Process video-level labels.
+    # label_indices = contexts["labels"].values
+    # sparse_labels = tf.sparse.SparseTensor(
+    #     tf.expand_dims(label_indices, axis=-1),
+    #     tf.ones_like(contexts["labels"].values, dtype=tf.bool),
+    #     (num_classes,))
+    # labels = tf.sparse.to_dense(sparse_labels,
+    #                             default_value=False,
+    #                             validate_indices=False)
+
+
+    # convert to batch format.
+    batch_video_ids = tf.expand_dims(contexts["id"], 0)
+    batch_video_matrix = tf.expand_dims(video_matrix, 0)
+    batch_labels = tf.expand_dims(labels, 0)
+    batch_frames = tf.expand_dims(num_frames, 0)
+    batch_label_weights = None
+
+  output_dict = {
+      "video_ids": batch_video_ids,
+      "video_matrix": batch_video_matrix,
+      "labels": batch_labels,
+      "num_frames": batch_frames,
+  }
+  if batch_label_weights is not None:
+    output_dict["label_weights"] = batch_label_weights
+
+
+  return output_dict
 
 
 ################ called at Parser ################
@@ -143,70 +206,18 @@ class PostBatchProcessor(object):
 
   def __call__(
       self, video_matrix, num_frames,
-      contexts: Dict[str, tf.io.VarLenFeature(tf.int64)],
-      features: Dict[str, tf.io.FixedLenSequenceFeature([], dtype=tf.string)]) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
+      contexts: Dict[str, tf.io.VarLenFeature(tf.int64)]) -> Dict[str, tf.Tensor]:
     ''' Partition frame-level feature matrix to segment-level feature matrix. '''
 
-    if self._segment_labels:
-      start_times = contexts["segment_start_times"].values
-      # Here we assume all the segments that started at the same start time has
-      # the same segment_size.
-      uniq_start_times, seg_idxs = tf.unique(start_times,
-                                             out_idx=tf.dtypes.int64)
-      # TODO(zhengxu): Ensure the segment_sizes are all same.
-      segment_size = self._segment_size
-      # Range gather matrix, e.g., [[0,1,2],[1,2,3]] for segment_size == 3.
-      range_mtx = tf.expand_dims(uniq_start_times, axis=-1) + tf.expand_dims(
-          tf.range(0, segment_size, dtype=tf.int64), axis=0)
+    output_dict = _postprocess_image(
+      video_matrix=video_matrix,
+      num_frames=num_frames,
+      contexts=contexts,
+      segment_labels=self._segment_labels,
+      segment_size=self._segment_size,
+      num_classes=self._num_classes)
 
-      # Shape: [num_segment, segment_size, feature_dim].
-      batch_video_matrix = tf.gather_nd(video_matrix,
-                                        tf.expand_dims(range_mtx, axis=-1))
-      num_segment = tf.shape(batch_video_matrix)[0]
-      batch_video_ids = tf.reshape(tf.tile([contexts["id"]], [num_segment]),
-                                   (num_segment,))
-      batch_frames = tf.reshape(tf.tile([segment_size], [num_segment]),
-                                (num_segment,))
-
-      # For segment labels, all labels are not exhausively rated. So we only
-      # evaluate the rated labels.
-
-      ########### process label parts -> call _process_label() ###########
-      # # Label indices for each segment, shape: [num_segment, 2].
-      # label_indices = tf.stack([seg_idxs, contexts["segment_labels"].values],
-      #                          axis=-1)
-      # label_values = contexts["segment_scores"].values
-      # sparse_labels = tf.sparse.SparseTensor(label_indices, label_values,
-      #                                        (num_segment, self._num_classes))
-      # batch_labels = tf.sparse.to_dense(sparse_labels, validate_indices=False)
-
-      # sparse_label_weights = tf.sparse.SparseTensor(
-      #     label_indices, tf.ones_like(label_values, dtype=tf.float32),
-      #     (num_segment, self._num_classes))
-      # batch_label_weights = tf.sparse.to_dense(sparse_label_weights,
-      #                                          validate_indices=False)
-      
-    else:
-      ########### process label parts -> call _process_label() ###########
-      # # Process video-level labels.
-      # label_indices = contexts["labels"].values
-      # sparse_labels = tf.sparse.SparseTensor(
-      #     tf.expand_dims(label_indices, axis=-1),
-      #     tf.ones_like(contexts["labels"].values, dtype=tf.bool),
-      #     (self._num_classes,))
-      # labels = tf.sparse.to_dense(sparse_labels,
-      #                             default_value=False,
-      #                             validate_indices=False)
+    return output_dict
 
 
-      # convert to batch format.
-      batch_video_ids = tf.expand_dims(contexts["id"], 0)
-      batch_video_matrix = tf.expand_dims(video_matrix, 0)
-      batch_labels = tf.expand_dims(labels, 0)
-      batch_frames = tf.expand_dims(num_frames, 0)
-      batch_label_weights = None
-
-    output_dict = {
-        "video_ids": batch_video_ids,
-        "video_matrix": batch_video_matrix,
-     
+    # return {'image': image}, label
