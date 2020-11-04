@@ -111,16 +111,16 @@ def _postprocess_image(video_matrix,
     #                                          validate_indices=False)
     
   else:
-    ########### process label parts -> call _process_label() ###########
-    # # Process video-level labels.
-    # label_indices = contexts["labels"].values
-    # sparse_labels = tf.sparse.SparseTensor(
-    #     tf.expand_dims(label_indices, axis=-1),
-    #     tf.ones_like(contexts["labels"].values, dtype=tf.bool),
-    #     (num_classes,))
-    # labels = tf.sparse.to_dense(sparse_labels,
-    #                             default_value=False,
-    #                             validate_indices=False)
+    ########## process label parts -> call _process_label() ###########
+    # Process video-level labels.
+    label_indices = contexts["labels"].values
+    sparse_labels = tf.sparse.SparseTensor(
+        tf.expand_dims(label_indices, axis=-1),
+        tf.ones_like(contexts["labels"].values, dtype=tf.bool),
+        (num_classes,))
+    labels = tf.sparse.to_dense(sparse_labels,
+                                default_value=False,
+                                validate_indices=False)
 
 
     # convert to batch format.
@@ -145,12 +145,36 @@ def _postprocess_image(video_matrix,
 
 ################ called at Parser ################
 def _process_label(label: tf.Tensor,
+                   serialized_exmaple: tf.Tensor,
+                   feature_map: dict,
+                   feature_names: tf.record,
+                   seg_idxs:list,
                    one_hot_label: bool = True,
-                   num_classes: Optional[int] = None) -> tf.Tensor:
+                   num_classes: Optional[int] = None,
+                   ) -> tf.Tensor:
   """Processes label Tensor."""
+  context_features = {
+      "id" : tf.io.FixedLenFeature([], tf.string)
+  }
 
-  return label
+  sequence_features = {
+      feature_name: tf.io.FixedLenFeature([],dtype=tf.string)
+      for feature_name in feature_names
+  }
+  contexts , features = tf.io.parse_single_sequence_example(
+      serialized_exmaple,
+      context_features=context_features,
+      sequence_features= sequence_features
+  )
 
+  label_indices = contexts["labels"].values
+  label_values = contexts["segment_scores"].values
+  sparse_labels = tf.sparse.SparseTensor(tf.expand_dims(label_indices, axis = -1),
+                                         tf.ones_like(contexts["labels"].values, dtype = tf.bool),
+                                         (num_classes,))
+  labels = tf.sparse.to_dense(sparse_labels, default_value= False, validate_indices= False)
+
+  return labels
 
 ################ called at Parser ################
 def get_video_matrix():
