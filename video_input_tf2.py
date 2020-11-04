@@ -61,76 +61,6 @@ def resize_axis(tensor, axis, new_size, fill_value=0):
   return resized
 
 
-def _process_image(image: tf.Tensor,
-                   is_training: bool = True,
-                   num_frames: int = 32,
-                   stride: int = 1,
-                   num_test_clips: int = 1,
-                   min_resize: int = 224,
-                   crop_size: int = 200,
-                   zero_centering_image: bool = False,
-                   seed: Optional[int] = None) -> tf.Tensor:
-  """Processes a serialized image tensor.
-  Args:
-    image: Input Tensor of shape [timesteps] and type tf.string of serialized
-      frames.
-    is_training: Whether or not in training mode. If True, random sample, crop
-      and left right flip is used.
-    num_frames: Number of frames per subclip.
-    stride: Temporal stride to sample frames.
-    num_test_clips: Number of test clips (1 by default). If more than 1, this
-      will sample multiple linearly spaced clips within each video at test time.
-      If 1, then a single clip in the middle of the video is sampled. The clips
-      are aggreagated in the batch dimension.
-    min_resize: Frames are resized so that min(height, width) is min_resize.
-    crop_size: Final size of the frame after cropping the resized frames. Both
-      height and width are the same.
-    zero_centering_image: If True, frames are normalized to values in [-1, 1].
-      If False, values in [0, 1].
-    seed: A deterministic seed to use when sampling.
-  Returns:
-    Processed frames. Tensor of shape
-      [num_frames * num_test_clips, crop_size, crop_size, 3].
-  """
-
-  # Validate parameters.
-  if is_training and num_test_clips != 1:
-      logging.warning(
-          '`num_test_clips` %d is ignored since `is_training` is `True`.',
-          num_test_clips)
-
-  # Temporal sampler.
-  if is_training:
-      # Sample random clip.
-      image = preprocess_ops_3d.sample_sequence(image, num_frames, True, stride,
-                                                seed)
-  elif num_test_clips > 1:
-      # Sample linespace clips.
-      image = preprocess_ops_3d.sample_linspace_sequence(image, num_test_clips,
-                                                         num_frames, stride)
-  else:
-      # Sample middle clip.
-      image = preprocess_ops_3d.sample_sequence(image, num_frames, False, stride)
-
-  # Decode JPEG string to tf.uint8.
-  image = preprocess_ops_3d.decode_jpeg(image, 3)
-
-  # Resize images (resize happens only if necessary to save compute).
-  image = preprocess_ops_3d.resize_smallest(image, min_resize)
-
-  if is_training:
-      # Standard image data augmentation: random crop and random flip.
-      image = preprocess_ops_3d.crop_image(image, crop_size, crop_size, True,
-                                           seed)
-      image = preprocess_ops_3d.random_flip_left_right(image, seed)
-  else:
-      # Central crop of the frames.
-      image = preprocess_ops_3d.crop_image(image, crop_size, crop_size, False)
-
-  # Cast the frames in float32, normalizing according to zero_centering_image.
-  return preprocess_ops_3d.normalize_image(image, zero_centering_image)
-
-
 def _postprocess_image(video_matrix,
                        num_frames,
                        contexts,
@@ -197,7 +127,7 @@ def _postprocess_image(video_matrix,
                                 validate_indices=False)
 
 
-    # convert to batch format.
+    # convert to batch format.  TODO: remove--> will be done in "transform_and_batch_fn"
     batch_video_ids = tf.expand_dims(contexts["id"], 0)
     batch_video_matrix = tf.expand_dims(video_matrix, 0)
     batch_labels = tf.expand_dims(labels, 0)
@@ -370,6 +300,8 @@ class Parser(parser.Parser):
 
   def __init__(self,
                input_params: exp_cfg.DataConfig,
+               contexts,
+               features,
                max_quantized_value=2,
                min_quantized_value=-2,
                image_key: str = IMAGE_KEY,
@@ -385,6 +317,9 @@ class Parser(parser.Parser):
     self._label_key = label_key
     self._dtype = tf.dtypes.as_dtype(input_params.dtype)
 
+    self.contexts = contexts
+    self.features = features
+    self._segment_size = input_params.segment_size
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
     self._feature_sizes = input_params.feature_sizes
@@ -392,42 +327,26 @@ class Parser(parser.Parser):
     self._max_quantized_value = max_quantized_value
     self._min_quantized_value = min_quantized_value
 
+    # loads (potentially) different types of features and concatenates them
+    # will be referenced in PostBatchProcessor
+    self.video_matrix, self.num_frames = _concat_features(features, self._feature_names, self._feature_sizes,
+                                                self._max_frames, self.max_quantized_value, self.min_quantized_value)
 
-
-  def _parse_train_data(
-      self, context, features) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:   # decoded_tensors: Dict[str, tf.Tensor]
+  def _parse_train_data(self) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:   # decoded_tensors: Dict[str, tf.Tensor]
     """Parses data for training."""
-    video_matrix, num_frames = _concat_features(features, self._feature_names, self._feature_sizes,
-                    self._max_frames, self.max_quantized_value, self.min_quantized_value)
-    # image = _process_image(
-    #     image=image,
-    #     is_training=True,
-    #     num_frames=self._num_frames,
-    #     stride=self._stride,
-    #     num_test_clips=self._num_test_clips,
-    #     min_resize=self._min_resize,
-    #     crop_size=self._crop_size)
-    # image = tf.cast(image, dtype=self._dtype)
 
-    return video_matrix, num_frames
+    image = tf.cast(self.video_matrix, dtype=self._dtype)
+    label = _process_label(self.contexts[self._label_key], self._one_hot_label, self._num_classes)
 
-  def _parse_eval_data(
-          self, context, features) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:  # decoded_tensors: Dict[str, tf.Tensor]
+    return {'image': image}, label
+
+  def _parse_eval_data(self) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:  # decoded_tensors: Dict[str, tf.Tensor]
     """Parses data for evaluation."""
-    video_matrix, num_frames = _concat_features(features, self._feature_names, self._feature_sizes,
-                    self._max_frames, self.max_quantized_value, self.min_quantized_value)
-    # image = _process_image(
-    #     image=image,
-    #     is_training=False,
-    #     num_frames=self._num_frames,
-    #     stride=self._stride,
-    #     num_test_clips=self._num_test_clips,
-    #     min_resize=self._min_resize,
-    #     crop_size=self._crop_size)
-    # image = tf.cast(image, dtype=self._dtype)
 
-    return video_matrix, num_frames
+    image = tf.cast(self.video_matrix, dtype=self._dtype)
+    label = _process_label(self.contexts[self._label_key], self._one_hot_label, self._num_classes)
 
+    return {'image': image}, label
 
 
 class PostBatchProcessor(object):
