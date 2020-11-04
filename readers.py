@@ -230,7 +230,7 @@ class YT8MFrameFeatureReader(BaseReader):
   #                                           max_quantized_value,
   #                                           min_quantized_value)
 
-  # TODO: get_video_matrix() (important: return context & features)
+  # TODO: decoder() (important: return context & features)
 
   def prepare_serialized_examples(self,
                                   serialized_example,
@@ -261,7 +261,7 @@ class YT8MFrameFeatureReader(BaseReader):
         context_features=context_features,
         sequence_features=sequence_features)
 
-    # TODO: parser -hyl
+    # TODO: parser  -hyl
 
     # loads (potentially) different types of features and concatenates them
     num_features = len(self.feature_names)
