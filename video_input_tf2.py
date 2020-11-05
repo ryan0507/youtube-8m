@@ -20,8 +20,8 @@ from official.vision.beta.dataloaders import decoder
 from official.vision.beta.dataloaders import parser
 from official.vision.beta.ops import preprocess_ops_3d
 
-IMAGE_KEY = 'image/encoded'
-LABEL_KEY = 'clip/label/index'
+# IMAGE_KEY = 'image/encoded'
+# LABEL_KEY = 'clip/label/index'
 
 def resize_axis(tensor, axis, new_size, fill_value=0):
   """Truncates or pads a tensor to new_size on on a given axis.
@@ -160,7 +160,7 @@ def _postprocess_image(image,
       [batch * num_test_clips, num_frames, height, width, 3].
   """
   if num_test_clips > 1 and not is_training:
-    # In this case, multiple clips are merged together in batch dimenstion which
+    # In this case, multiple clips are merged together in batch dimension which
     # will be B * num_test_clips.
     image = tf.reshape(
         image, (-1, num_frames, image.shape[2], image.shape[3], image.shape[4]))
@@ -243,8 +243,9 @@ class Decoder(decoder.Decoder):
 
   def __init__(self,
                input_params: exp_cfg.DataConfig,
-               image_key: str = IMAGE_KEY,
-               label_key: str = LABEL_KEY):
+               # image_key: str = IMAGE_KEY,
+               # label_key: str = LABEL_KEY
+               ):
 
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
@@ -290,8 +291,8 @@ class Parser(parser.Parser):
                contexts,
                features,
                input_params: exp_cfg.DataConfig,
-               image_key: str = IMAGE_KEY,
-               label_key: str = LABEL_KEY,
+               # image_key: str = IMAGE_KEY,
+               # label_key: str = LABEL_KEY,
                max_quantized_value=2,
                min_quantized_value=-2,
                ):
@@ -319,7 +320,7 @@ class Parser(parser.Parser):
 
   # loads (potentially) different types of features and concatenates them
     self.video_matrix, self.num_frames = _concat_features(self.features, self._feature_names, self._feature_sizes,
-                                                self._max_frames, self.max_quantized_value, self.min_quantized_value)
+                                                self._max_frames, self._max_quantized_value, self._min_quantized_value)
 
 
   def _parse_train_data(
@@ -328,7 +329,7 @@ class Parser(parser.Parser):
     """Parses data for training."""
     output = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
 
-    return output #batch
+    return output #batched
 
   def _parse_eval_data(
             self, decoded_tensors: Dict[str, tf.Tensor]
