@@ -345,11 +345,12 @@ class PostBatchProcessor(object):
 
     image = batched_data["video_matrix"]
     num_frames = batched_data["num_frames"]
-    output_dict = _postprocess_image(
+    postprocessed_image = _postprocess_image(
       image=image,
       is_training=self._is_training,
       num_frames=num_frames,
       num_test_clips=self._num_test_clips
     )
+    batched_data["video_matrix"] = postprocessed_image
 
-    return output_dict
+    return batched_data
