@@ -272,12 +272,12 @@ class Decoder(decoder.Decoder):
   def decode(self, serialized_example):
     """Parses a single tf.Example into image and label tensors."""
 
-    context, features = tf.io.parse_single_sequence_example(
+    contexts, features = tf.io.parse_single_sequence_example(
         serialized_example,
         context_features=self._context_features,
         sequence_features=self._sequence_features)
 
-    return context, features
+    return contexts, features
 
 
 class Parser(parser.Parser):
@@ -297,16 +297,9 @@ class Parser(parser.Parser):
                min_quantized_value=-2,
                ):
 
-    self._num_frames = input_params.feature_shape[0]
-    self._stride = input_params.temporal_stride
-    self._num_test_clips = input_params.num_test_clips
-    self._min_resize = input_params.min_image_size
-    self._crop_size = input_params.feature_shape[1]
-    self._one_hot_label = input_params.one_hot
     self._num_classes = input_params.num_classes
-    self._image_key = image_key
-    self._label_key = label_key
-    self._dtype = tf.dtypes.as_dtype(input_params.dtype)
+    # self._image_key = image_key
+    # self._label_key = label_key
 
     self._segment_size = input_params.segment_size
     self._segment_labels = input_params.segment_labels
@@ -315,7 +308,7 @@ class Parser(parser.Parser):
     self._max_frames = input_params.max_frames
     self._max_quantized_value = max_quantized_value
     self._min_quantized_value = min_quantized_value
-    self.featues = features
+    self.features = features
     self.contexts = contexts
 
   # loads (potentially) different types of features and concatenates them
@@ -323,21 +316,17 @@ class Parser(parser.Parser):
                                                 self._max_frames, self._max_quantized_value, self._min_quantized_value)
 
 
-  def _parse_train_data(
-      self, decoded_tensors: Dict[str, tf.Tensor]
-  ) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
+  def _parse_train_data(self): #  -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
     """Parses data for training."""
-    output = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
+    output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
 
-    return output #batched
+    return output_dict #batched
 
-  def _parse_eval_data(
-            self, decoded_tensors: Dict[str, tf.Tensor]
-    ) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
+  def _parse_eval_data(self): #  -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
     """Parses data for evaluation."""
-    output = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
+    output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
 
-    return output
+    return output_dict
 
 
 class PostBatchProcessor(object):
@@ -346,8 +335,6 @@ class PostBatchProcessor(object):
   def __init__(self, input_params: exp_cfg.DataConfig):
 
     self._segment_labels = input_params.segment_labels
-    self._segment_size = input_params.segment_size
-    self._num_classes = input_params.num_classes
     self._is_training = input_params.is_training
     self._num_test_clips = input_params.num_test_clips
 
@@ -363,6 +350,6 @@ class PostBatchProcessor(object):
       is_training=self._is_training,
       num_frames=num_frames,
       num_test_clips=self._num_test_clips
-      )
+    )
 
     return output_dict
