@@ -61,7 +61,7 @@ def resize_axis(tensor, axis, new_size, fill_value=0):
   return resized
 
 
-def _postprocess_image(video_matrix,
+def _process_segment_and_label(video_matrix,
                        num_frames,
                        contexts,
                        segment_labels,
@@ -73,9 +73,9 @@ def _postprocess_image(video_matrix,
   Args:
 
   Returns:
-
+    output: dictionary containing batch information
   """
-
+  # Partition frame-level feature matrix to segment-level feature matrix.
   if segment_labels:
     start_times = contexts["segment_start_times"].values
     # Here we assume all the segments that started at the same start time has
@@ -85,8 +85,7 @@ def _postprocess_image(video_matrix,
     # TODO(zhengxu): Ensure the segment_sizes are all same.
     # Range gather matrix, e.g., [[0,1,2],[1,2,3]] for segment_size == 3.
     range_mtx = tf.expand_dims(uniq_start_times, axis=-1) + tf.expand_dims(
-        tf.range(0, segment_size, dtype=tf.int64), axis=0)
-
+      tf.range(0, segment_size, dtype=tf.int64), axis=0)
     # Shape: [num_segment, segment_size, feature_dim].
     batch_video_matrix = tf.gather_nd(video_matrix,
                                       tf.expand_dims(range_mtx, axis=-1))
@@ -99,35 +98,31 @@ def _postprocess_image(video_matrix,
     # For segment labels, all labels are not exhausively rated. So we only
     # evaluate the rated labels.
 
-    ########### process label parts -> call _process_label() ###########
-    # # Label indices for each segment, shape: [num_segment, 2].
-    # label_indices = tf.stack([seg_idxs, contexts["segment_labels"].values],
-    #                          axis=-1)
-    # label_values = contexts["segment_scores"].values
-    # sparse_labels = tf.sparse.SparseTensor(label_indices, label_values,
-    #                                        (num_segment, num_classes))
-    # batch_labels = tf.sparse.to_dense(sparse_labels, validate_indices=False)
+    # Label indices for each segment, shape: [num_segment, 2].
+    label_indices = tf.stack([seg_idxs, contexts["segment_labels"].values],
+                             axis=-1)
+    label_values = contexts["segment_scores"].values
+    sparse_labels = tf.sparse.SparseTensor(label_indices, label_values,
+                                           (num_segment, num_classes))
+    batch_labels = tf.sparse.to_dense(sparse_labels, validate_indices=False)
 
-    # sparse_label_weights = tf.sparse.SparseTensor(
-    #     label_indices, tf.ones_like(label_values, dtype=tf.float32),
-    #     (num_segment, num_classes))
-    # batch_label_weights = tf.sparse.to_dense(sparse_label_weights,
-    #                                          validate_indices=False)
-    
+    sparse_label_weights = tf.sparse.SparseTensor(
+      label_indices, tf.ones_like(label_values, dtype=tf.float32),
+      (num_segment, num_classes))
+    batch_label_weights = tf.sparse.to_dense(sparse_label_weights,
+                                             validate_indices=False)
   else:
-    ########## process label parts -> call _process_label() ###########
     # Process video-level labels.
     label_indices = contexts["labels"].values
     sparse_labels = tf.sparse.SparseTensor(
-        tf.expand_dims(label_indices, axis=-1),
-        tf.ones_like(contexts["labels"].values, dtype=tf.bool),
-        (num_classes,))
+      tf.expand_dims(label_indices, axis=-1),
+      tf.ones_like(contexts["labels"].values, dtype=tf.bool),
+      (num_classes,))
     labels = tf.sparse.to_dense(sparse_labels,
                                 default_value=False,
                                 validate_indices=False)
 
-
-    # convert to batch format.  TODO: remove--> will be done in "transform_and_batch_fn"
+    # convert to batch format.
     batch_video_ids = tf.expand_dims(contexts["id"], 0)
     batch_video_matrix = tf.expand_dims(video_matrix, 0)
     batch_labels = tf.expand_dims(labels, 0)
@@ -135,50 +130,42 @@ def _postprocess_image(video_matrix,
     batch_label_weights = None
 
   output_dict = {
-      "video_ids": batch_video_ids,
-      "video_matrix": batch_video_matrix,
-      "labels": batch_labels,
-      "num_frames": batch_frames,
+    "video_ids": batch_video_ids,
+    "video_matrix": batch_video_matrix,
+    "labels": batch_labels,
+    "num_frames": batch_frames,
   }
   if batch_label_weights is not None:
     output_dict["label_weights"] = batch_label_weights
 
-
   return output_dict
 
+def _postprocess_image(image,
+                       is_training: bool = True,
+                       num_frames: int = 32,
+                       num_test_clips: int = 1) -> tf.Tensor:
+  """Processes a batched Tensor of frames.
+  The same parameters used in process should be used here.
+  Args:
+    image: Input Tensor of shape [batch, timesteps, height, width, 3].
+    is_training: Whether or not in training mode. If True, random sample, crop
+      and left right flip is used.
+    num_frames: Number of frames per subclip.
+    num_test_clips: Number of test clips (1 by default). If more than 1, this
+      will sample multiple linearly spaced clips within each video at test time.
+      If 1, then a single clip in the middle of the video is sampled. The clips
+      are aggreagated in the batch dimension.
+  Returns:
+    Processed frames. Tensor of shape
+      [batch * num_test_clips, num_frames, height, width, 3].
+  """
+  if num_test_clips > 1 and not is_training:
+    # In this case, multiple clips are merged together in batch dimenstion which
+    # will be B * num_test_clips.
+    image = tf.reshape(
+        image, (-1, num_frames, image.shape[2], image.shape[3], image.shape[4]))
 
-################ called at Parser ################
-def _process_label(label: tf.Tensor,
-                   serialized_exmaple: tf.Tensor,
-                   feature_map: dict,
-                   feature_names: tf.record,
-                   seg_idxs:list,
-                   one_hot_label: bool = True,
-                   num_classes: Optional[int] = None,
-                   ) -> tf.Tensor:
-  """Processes label Tensor."""
-  context_features = {
-      "id" : tf.io.FixedLenFeature([], tf.string)
-  }
-
-  sequence_features = {
-      feature_name: tf.io.FixedLenFeature([],dtype=tf.string)
-      for feature_name in feature_names
-  }
-  contexts , features = tf.io.parse_single_sequence_example(
-      serialized_exmaple,
-      context_features=context_features,
-      sequence_features= sequence_features
-  )
-
-  label_indices = contexts["labels"].values
-  label_values = contexts["segment_scores"].values
-  sparse_labels = tf.sparse.SparseTensor(tf.expand_dims(label_indices, axis = -1),
-                                         tf.ones_like(contexts["labels"].values, dtype = tf.bool),
-                                         (num_classes,))
-  labels = tf.sparse.to_dense(sparse_labels, default_value= False, validate_indices= False)
-
-  return labels
+  return image
 
 def _get_video_matrix(features, feature_size, max_frames,
                        max_quantized_value, min_quantized_value):
@@ -255,14 +242,15 @@ class Decoder(decoder.Decoder):
   """A tf.Example decoder for classification task."""
 
   def __init__(self,
-               input_params: exp_cfg.DataConfig): # image_key: str = IMAGE_KEY, label_key: str = LABEL_KEY
+               input_params: exp_cfg.DataConfig,
+               image_key: str = IMAGE_KEY,
+               label_key: str = LABEL_KEY):
 
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
     self._context_features = {
         "id": tf.io.FixedLenFeature([], tf.string),
     }
-
     if self._segment_labels:
       self._context_features.update({
           # There is no need to read end-time given we always assume the segment
@@ -279,16 +267,16 @@ class Decoder(decoder.Decoder):
         for feature_name in self._feature_names
     }
 
+
   def decode(self, serialized_example):
     """Parses a single tf.Example into image and label tensors."""
 
-    # Read/parse frame/segment-level labels.
     context, features = tf.io.parse_single_sequence_example(
         serialized_example,
         context_features=self._context_features,
         sequence_features=self._sequence_features)
 
-    return context, features  #return entire contexts, sequences to be used in parser
+    return context, features
 
 
 class Parser(parser.Parser):
@@ -299,13 +287,15 @@ class Parser(parser.Parser):
   """
 
   def __init__(self,
-               input_params: exp_cfg.DataConfig,
                contexts,
                features,
+               input_params: exp_cfg.DataConfig,
+               image_key: str = IMAGE_KEY,
+               label_key: str = LABEL_KEY,
                max_quantized_value=2,
                min_quantized_value=-2,
-               image_key: str = IMAGE_KEY,
-               label_key: str = LABEL_KEY):
+               ):
+
     self._num_frames = input_params.feature_shape[0]
     self._stride = input_params.temporal_stride
     self._num_test_clips = input_params.num_test_clips
@@ -317,8 +307,6 @@ class Parser(parser.Parser):
     self._label_key = label_key
     self._dtype = tf.dtypes.as_dtype(input_params.dtype)
 
-    self.contexts = contexts
-    self.features = features
     self._segment_size = input_params.segment_size
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
@@ -326,52 +314,54 @@ class Parser(parser.Parser):
     self._max_frames = input_params.max_frames
     self._max_quantized_value = max_quantized_value
     self._min_quantized_value = min_quantized_value
+    self.featues = features
+    self.contexts = contexts
 
-    # loads (potentially) different types of features and concatenates them
-    # will be referenced in PostBatchProcessor
-    self.video_matrix, self.num_frames = _concat_features(features, self._feature_names, self._feature_sizes,
+  # loads (potentially) different types of features and concatenates them
+    self.video_matrix, self.num_frames = _concat_features(self.features, self._feature_names, self._feature_sizes,
                                                 self._max_frames, self.max_quantized_value, self.min_quantized_value)
 
-  def _parse_train_data(self) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:   # decoded_tensors: Dict[str, tf.Tensor]
+
+  def _parse_train_data(
+      self, decoded_tensors: Dict[str, tf.Tensor]
+  ) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
     """Parses data for training."""
+    output = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
 
-    image = tf.cast(self.video_matrix, dtype=self._dtype)
-    label = _process_label(self.contexts[self._label_key], self._one_hot_label, self._num_classes)
+    return output #batch
 
-    return {'image': image}, label
-
-  def _parse_eval_data(self) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:  # decoded_tensors: Dict[str, tf.Tensor]
+  def _parse_eval_data(
+            self, decoded_tensors: Dict[str, tf.Tensor]
+    ) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
     """Parses data for evaluation."""
+    output = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
 
-    image = tf.cast(self.video_matrix, dtype=self._dtype)
-    label = _process_label(self.contexts[self._label_key], self._one_hot_label, self._num_classes)
-
-    return {'image': image}, label
+    return output
 
 
 class PostBatchProcessor(object):
   """Processes a video and label dataset which is batched."""
 
   def __init__(self, input_params: exp_cfg.DataConfig):
+
     self._segment_labels = input_params.segment_labels
     self._segment_size = input_params.segment_size
     self._num_classes = input_params.num_classes
+    self._is_training = input_params.is_training
+    self._num_test_clips = input_params.num_test_clips
 
 
   def __call__(
-      self, video_matrix, num_frames,
+      self, batched_data,
       contexts: Dict[str, tf.io.VarLenFeature(tf.int64)]) -> Dict[str, tf.Tensor]:
-    ''' Partition frame-level feature matrix to segment-level feature matrix. '''
 
+    image = batched_data["video_matrix"]
+    num_frames = batched_data["num_frames"]
     output_dict = _postprocess_image(
-      video_matrix=video_matrix,
+      image=image,
+      is_training=self._is_training,
       num_frames=num_frames,
-      contexts=contexts,
-      segment_labels=self._segment_labels,
-      segment_size=self._segment_size,
-      num_classes=self._num_classes)
+      num_test_clips=self._num_test_clips
+      )
 
     return output_dict
-
-
-    # return {'image': image}, label
