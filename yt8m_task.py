@@ -24,6 +24,8 @@ from official.vision.beta.configs import video_classification as exp_cfg
 from official.vision.beta.dataloaders import video_input
 from official.vision.beta.modeling import factory_3d
 from yt8m_model import YT8MModel
+import average_precision_calculator as ap_calculator
+import mean_average_precision_calculator as map_calculator
 
 
 @task_factory.register_task_cls(exp_cfg.VideoClassificationTask)
@@ -40,29 +42,22 @@ class YT8MTask(base_task.Task):
     input_specs = tf.keras.layers.InputSpec(shape=[None] + common_input_shape)
     logging.info('Build model input %r', common_input_shape)
 
-    l2_weight_decay = self.task_config.losses.l2_weight_decay
-    # Divide weight decay by 2.0 to match the implementation of tf.nn.l2_loss.
-    # (https://www.tensorflow.org/api_docs/python/tf/keras/regularizers/l2)
-    # (https://www.tensorflow.org/api_docs/python/tf/nn/l2_loss)
-    l2_regularizer = (tf.keras.regularizers.l2(
-        l2_weight_decay / 2.0) if l2_weight_decay else None)
-
-    # model = factory_3d.build_model(
-    #     self.task_config.model.model_type,
-    #     input_specs=input_specs,
-    #     model_config=self.task_config.model,
-    #     num_classes=self.task_config.train_data.num_classes,
-    #     l2_regularizer=l2_regularizer)
-
-    kernel_regularizer =
-    bias_regularizer =
-
-    model = YT8MModel(exp_cfg.DataConfig,
+    #model configuration
+    model = YT8MModel(
+               num_classes=self.task_config.num_classes,
+               num_frames=self.task_config.num_frames,
+               iterations=self.task_config.iterations,
+               cluster_size=self.task_config.cluster_size,
+               hidden_size=self.task_config.hidden_size,
+               add_batch_norm=self.task_config.add_batch_norm,
+               sample_random_frames=self.task_config.sample_random_frames,
+               is_training=self.task_config.is_training,
+               activation=self.task_config.activtion,
+               pooling_method=self.task_config.pooling_method,
                input_specs=input_specs,
                dropout_rate=0.0,
                kernel_initializer='random_normal',
-               kernel_regularizer=kernel_regularizer,
-               bias_regularizer=bias_regularizer)
+               )
     return model
 
   def build_inputs(self, params: exp_cfg.DataConfig, input_context=None):
@@ -93,25 +88,48 @@ class YT8MTask(base_task.Task):
     Returns:
       The total loss tensor.
     """
-    losses_config = self.task_config.losses
+    total_loss = tf.keras.losses.binary_crossentropy(
+      labels,
+      model_outputs,
+      from_logits=True)
+
+    total_loss = tf_utils.safe_mean(total_loss)
+
+    if aux_losses:
+      total_loss += tf.add_n(aux_losses)
 
     return total_loss
 
   def build_metrics(self, training=True):
     """Gets streaming metrics for training/validation.
        metric: mAP, gAP
+      Args:
+      num_class: A positive integer specifying the number of classes.
+      top_n: A positive Integer specifying the average precision at n, or None
+        to use all provided data points.
     """
-    if self.task_config.losses.one_hot:
-      metrics = [
-      ]
-    else:
-      metrics = [
-      ]
+    # metrics = [
+    #   map_calculator.MeanAveragePrecisionCalculator(
+    #     num_class=self.task_config.num_classes,
+    #     top_n=self.task_config.top_n),
+    #   ap_calculator.AveragePrecisionCalculator()
+    # ]
+    metrics = {
+      'map_calculator' : map_calculator.MeanAveragePrecisionCalculator(
+        num_class=self.task_config.num_classes,
+        top_n=self.task_config.top_n),
+      'global_ap_calculator' : ap_calculator.AveragePrecisionCalculator()
+    }
     return metrics
 
   def process_metrics(self, metrics, labels, outputs):
     '''Prpcesses metrics'''
-    return
+    metrics['map_calculator'].accumulate(outputs, labels)
+    metrics['global_ap_calculator'].accumulate(outputs,labels)
+
+    # aps = metrics['map_calculator'].peek_map_at_n()
+    # gap = metrics['global_ap_calculator'].peek_ap_at_n()
+
 
   def train_step(self, inputs, model, optimizer, metrics=None):
     """Does forward and backward.

@@ -3,33 +3,6 @@ import model_utils as utils
 
 layers = tf.keras.layers
 
-''' WILL BE CALLED FROM THIS BUILDER FUNCTION!
-@register_model_builder('video_classification')
-def build_video_classification_model(
-    input_specs: tf.keras.layers.InputSpec,
-    model_config: video_classification_cfg.VideoClassificationModel,
-    num_classes: int,
-    l2_regularizer: tf.keras.regularizers.Regularizer = None):
-  """Builds the video classification model."""
-  backbone = backbones.factory.build_backbone(
-      input_specs=input_specs,
-      model_config=model_config,
-      l2_regularizer=l2_regularizer)
-
-  norm_activation_config = model_config.norm_activation
-  model = video_classification_model.VideoClassificationModel(
-      num_classes=num_classes,
-      input_specs=input_specs,
-      dropout_rate=model_config.dropout_rate,
-      kernel_regularizer=l2_regularizer,
-      add_head_batch_norm=model_config.add_head_batch_norm,
-      use_sync_bn=norm_activation_config.use_sync_bn,
-      norm_momentum=norm_activation_config.norm_momentum,
-      norm_epsilon=norm_activation_config.norm_epsilon)
-  return model
-  '''
-
-
 class YT8MModel(tf.keras.Model):
     
     ACT_FN_MAP = {
@@ -83,12 +56,12 @@ class YT8MModel(tf.keras.Model):
       'dropout_rate': dropout_rate,
       'aggregate_endpoints': aggregate_endpoints,
       'kernel_initializer': kernel_initializer,
-      'kernel_regularizer': kernel_regularizer,
-      'bias_regularizer': bias_regularizer,
+      # 'kernel_regularizer': kernel_regularizer,
+      # 'bias_regularizer': bias_regularizer,
     }
     self._input_specs = input_specs
-    self._kernel_regularizer = kernel_regularizer
-    self._bias_regularizer = bias_regularizer
+    # self._kernel_regularizer = kernel_regularizer
+    # self._bias_regularizer = bias_regularizer
 
     self._act_fn = self.ACT_FN_MAP.get(activation)
 
