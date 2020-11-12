@@ -26,7 +26,7 @@ from official.vision.beta.modeling import factory_3d
 
 
 @task_factory.register_task_cls(exp_cfg.VideoClassificationTask)
-class VideoClassificationTask(base_task.Task):
+class YT8MTask(base_task.Task)::
   """A task for video classification."""
 
   #TODO: Does this function needs modification?
