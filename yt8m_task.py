@@ -23,13 +23,13 @@ from official.modeling import tf_utils
 from official.vision.beta.configs import video_classification as exp_cfg
 from official.vision.beta.dataloaders import video_input
 from official.vision.beta.modeling import factory_3d
+from yt8m_model import YT8MModel
 
 
 @task_factory.register_task_cls(exp_cfg.VideoClassificationTask)
-class VideoClassificationTask(base_task.Task):
+class YT8MTask(base_task.Task):
   """A task for video classification."""
 
-  #TODO: Does this function needs modification?
   def build_model(self):
     """Builds video classification model."""
     common_input_shape = [
@@ -47,15 +47,24 @@ class VideoClassificationTask(base_task.Task):
     l2_regularizer = (tf.keras.regularizers.l2(
         l2_weight_decay / 2.0) if l2_weight_decay else None)
 
-    model = factory_3d.build_model(
-        self.task_config.model.model_type,
-        input_specs=input_specs,
-        model_config=self.task_config.model,
-        num_classes=self.task_config.train_data.num_classes,
-        l2_regularizer=l2_regularizer)
+    # model = factory_3d.build_model(
+    #     self.task_config.model.model_type,
+    #     input_specs=input_specs,
+    #     model_config=self.task_config.model,
+    #     num_classes=self.task_config.train_data.num_classes,
+    #     l2_regularizer=l2_regularizer)
+
+    kernel_regularizer =
+    bias_regularizer =
+
+    model = YT8MModel(exp_cfg.DataConfig,
+               input_specs=input_specs,
+               dropout_rate=0.0,
+               kernel_initializer='random_normal',
+               kernel_regularizer=kernel_regularizer,
+               bias_regularizer=bias_regularizer)
     return model
 
-  #TODO: Does this function needs modification?
   def build_inputs(self, params: exp_cfg.DataConfig, input_context=None):
     """Builds classification input."""
 

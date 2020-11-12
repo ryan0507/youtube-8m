@@ -16,7 +16,6 @@ def build_video_classification_model(
 
   norm_activation_config = model_config.norm_activation
   model = video_classification_model.VideoClassificationModel(
-      backbone=backbone,
       num_classes=num_classes,
       input_specs=input_specs,
       dropout_rate=model_config.dropout_rate,
