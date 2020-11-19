@@ -20,15 +20,15 @@ from official.core import base_task
 from official.core import input_reader
 from official.core import task_factory
 from official.modeling import tf_utils
-from official.vision.beta.configs import video_classification as exp_cfg
 from official.vision.beta.dataloaders import video_input
 from official.vision.beta.modeling import factory_3d
 from yt8m_model import YT8MModel
 import average_precision_calculator as ap_calculator
 import mean_average_precision_calculator as map_calculator
+from configs import yt8m as yt8m_cfg
 
 
-@task_factory.register_task_cls(exp_cfg.VideoClassificationTask)
+@task_factory.register_task_cls(yt8m_cfg.YT8MTask)
 class YT8MTask(base_task.Task):
   """A task for video classification."""
 
@@ -43,24 +43,22 @@ class YT8MTask(base_task.Task):
     logging.info('Build model input %r', common_input_shape)
 
     #model configuration
+    model_config = self.task_config.model
     model = YT8MModel(
-               num_classes=self.task_config.num_classes,
-               num_frames=self.task_config.num_frames,
-               iterations=self.task_config.iterations,
-               cluster_size=self.task_config.cluster_size,
-               hidden_size=self.task_config.hidden_size,
-               add_batch_norm=self.task_config.add_batch_norm,
-               sample_random_frames=self.task_config.sample_random_frames,
-               is_training=self.task_config.is_training,
-               activation=self.task_config.activtion,
-               pooling_method=self.task_config.pooling_method,
+               num_frames=model_config.num_frames,
+               iterations=model_config.iterations,
+               cluster_size=model_config.cluster_size,
+               hidden_size=model_config.hidden_size,
+               add_batch_norm=model_config.add_batch_norm,
+               sample_random_frames=model_config.sample_random_frames,
+               is_training=model_config.is_training,
+               activation=model_config.activtion,
+               pooling_method=model_config.pooling_method,
                input_specs=input_specs,
-               dropout_rate=0.0,
-               kernel_initializer='random_normal',
                )
     return model
 
-  def build_inputs(self, params: exp_cfg.DataConfig, input_context=None):
+  def build_inputs(self, params: yt8m_cfg.DataConfig, input_context=None):
     """Builds classification input."""
 
     decoder = video_input.Decoder()
@@ -88,10 +86,12 @@ class YT8MTask(base_task.Task):
     Returns:
       The total loss tensor.
     """
+    losses_config = self.task_config.losses
     total_loss = tf.keras.losses.binary_crossentropy(
       labels,
       model_outputs,
-      from_logits=True)
+      from_logits=losses_config.from_logits,
+      label_smoothing=losses_config.label_smoothing)
 
     total_loss = tf_utils.safe_mean(total_loss)
 
