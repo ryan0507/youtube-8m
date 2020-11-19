@@ -55,6 +55,33 @@ def resize_axis(tensor, axis, new_size, fill_value=0):
   resized = tf.ensure_shape(resized, new_shape)
   return resized
 
+def sampler(video_matrix,
+            num_frames: int = 32,
+            stride: int = 1,
+            seed: Optional[int] = None) -> tf.Tensor:
+  """
+  Args:
+    video_matrix: different features concatenated into one matrix
+                  [num_segment, segment_size, features]
+    is_training: Whether or not in training mode. If True, random sample, crop
+      and left right flip is used.
+    num_frames: Number of frames per subclip.
+    stride: Temporal stride to sample frames.
+    seed: A deterministic seed to use when sampling.
+
+  Returns:
+    matrix of size: [num_segment, segment_size, features]
+    maintained the same as video_matrix
+  """
+  # Sample random clip.
+  sampled_video_matrix = []
+  for image in video_matrix: #iterate over num segment / image: (segment_size, features)
+    image = preprocess_ops_3d.sample_sequence(image, num_frames, True, stride,
+                                            seed)
+    sampled_video_matrix.append(image)
+
+  sampled_video_matrix = tf.stack(sampled_video_matrix, axis=0)
+  return sampled_video_matrix
 
 def _process_segment_and_label(video_matrix,
                                num_frames,
@@ -65,12 +92,12 @@ def _process_segment_and_label(video_matrix,
   """Processes a batched Tensor of frames.
   The same parameters used in process should be used here.
   Args:
-    video_matrix:
-    num_frames:
-    contexts:
-    segment_labels:
-    segment_size:
-    num_classes:
+    video_matrix: different features concatenated into one matrix
+    num_frames: Number of frames per subclip.
+    contexts: context information extracted from decoder
+    segment_labels: if we read segment labels instead.
+    segment_size: the segment_size used for reading segments.
+    num_classes: a positive integer for the number of classes.
 
   Returns:
     output: dictionary containing batch information
@@ -146,8 +173,6 @@ def _postprocess_image(image,
   The same parameters used in process should be used here.
   Args:
     image: Input Tensor of shape [batch, timesteps, height, width, 3].
-    is_training: Whether or not in training mode. If True, random sample, crop
-      and left right flip is used.
     num_frames: Number of frames per subclip.
   Returns:
     Processed frames. Tensor of shape
@@ -195,12 +220,12 @@ def _concat_features(features, feature_names, feature_sizes,
           features: raw feature values
           feature_names: list of feature names
           feature_sizes: list of features sizes
-          max_frames:
-          max_quantized_value:
-          min_quantized_value:
+          max_frames: number of frames in the sequence
+          max_quantized_value: the maximum of the quantized value.
+          min_quantized_value: the minimum of the quantized value.
 
       Returns:
-          video_matrix: different features concatenated
+          video_matrix: different features concatenated into one matrix
           num_frames: the number of frames in the video
   '''
 
@@ -290,6 +315,7 @@ class Parser(parser.Parser):
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
     self._feature_sizes = input_params.feature_sizes
+    self.stride = input_params.temporal_stride
     self._max_frames = input_params.max_frames
     self._max_quantized_value = max_quantized_value
     self._min_quantized_value = min_quantized_value
@@ -301,10 +327,18 @@ class Parser(parser.Parser):
                                                           self._max_frames, self._max_quantized_value,
                                                           self._min_quantized_value)
 
-  def _parse_data(self):  # -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
+  def _parse_train_data(self):  # -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
     """Parses data for training."""
+    # call sampler
+    self.video_matrix = sampler(self.video_matrix, self.num_frames, self.stride, self.seed)
     output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels,
                                              self._segment_size, self._num_classes)
+    return output_dict
+
+  def _parse_eval_data(self):  # -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
+    """Parses data for training."""
+    output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels,
+                                               self._segment_size, self._num_classes)
 
     return output_dict  # batched
 
