@@ -42,8 +42,8 @@ def yt8m(is_training):
 
 class YT8MModel(hyperparams.Config):
   """The model config."""
-  num_classes,
-  num_frames,
+  num_classes : int = 3862, #TODO: get from reader, should be removed
+  num_frames : int = 32,    #TODO: get from reader, should be removed
   iterations : int = 30
   cluster_size : int = 8192
   hidden_size : int = 1024
@@ -67,7 +67,5 @@ class YT8MTask(cfg.TaskConfig):
   validation_data: DataConfig = DataConfig(is_training=False)
   losses: Losses = Losses()
 
-def add_trainer(experiment: cfg.):
 
-  return experiment
 
