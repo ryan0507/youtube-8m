@@ -209,26 +209,26 @@ class YT8MFrameFeatureReader(BaseReader):
     return feature_matrix, num_frames
 
 
-  # def prepare_reader(self,
-  #                    filename_queue,
-  #                    max_quantized_value=2,
-  #                    min_quantized_value=-2):
-  #   """Creates a single reader thread for YouTube8M SequenceExamples.
-  #
-  #   Args:
-  #     filename_queue: A tensorflow queue of filename locations.
-  #     max_quantized_value: the maximum of the quantized value.
-  #     min_quantized_value: the minimum of the quantized value.
-  #
-  #   Returns:
-  #     A dict of video indexes, video features, labels, and frame counts.
-  #   """
-  #   reader = tf.TFRecordReader()
-  #   _, serialized_example = reader.read(filename_queue)
-  #
-  #   return self.prepare_serialized_examples(serialized_example,
-  #                                           max_quantized_value,
-  #                                           min_quantized_value)
+  def prepare_reader(self,
+                     filename_queue,
+                     max_quantized_value=2,
+                     min_quantized_value=-2):
+    """Creates a single reader thread for YouTube8M SequenceExamples.
+
+    Args:
+      filename_queue: A tensorflow queue of filename locations.
+      max_quantized_value: the maximum of the quantized value.
+      min_quantized_value: the minimum of the quantized value.
+
+    Returns:
+      A dict of video indexes, video features, labels, and frame counts.
+    """
+    reader = tf.TFRecordReader()
+    _, serialized_example = reader.read(filename_queue)
+
+    return self.prepare_serialized_examples(serialized_example,
+                                            max_quantized_value,
+                                            min_quantized_value)
 
   # TODO: decoder() (important: return context & features)
 
@@ -249,7 +249,7 @@ class YT8MFrameFeatureReader(BaseReader):
           "segment_labels": tf.io.VarLenFeature(tf.int64),
           "segment_start_times": tf.io.VarLenFeature(tf.int64),
           "segment_scores": tf.io.VarLenFeature(tf.float32)
-      })
+      }
     else:
       context_features.update({"labels": tf.io.VarLenFeature(tf.int64)})
     sequence_features = {

@@ -5,23 +5,18 @@
   context feature and a fixed length byte-quantized feature vector, obtained
   from the features in 'feature_names'. The quantized features will be mapped
   back into a range between min_quantized_value and max_quantized_value.
+  link for details: https://research.google.com/youtube8m/download.html
   '''
 
-
 from typing import Dict, Optional, Tuple
-
 from absl import logging
 import tensorflow as tf
 import utils
-
-
 from official.vision.beta.configs import video_classification as exp_cfg
 from official.vision.beta.dataloaders import decoder
 from official.vision.beta.dataloaders import parser
 from official.vision.beta.ops import preprocess_ops_3d
 
-# IMAGE_KEY = 'image/encoded'
-# LABEL_KEY = 'clip/label/index'
 
 def resize_axis(tensor, axis, new_size, fill_value=0):
   """Truncates or pads a tensor to new_size on on a given axis.
@@ -50,27 +45,32 @@ def resize_axis(tensor, axis, new_size, fill_value=0):
   shape = tf.stack(shape)
 
   resized = tf.concat([
-      tf.slice(tensor, tf.zeros_like(shape), shape),
-      tf.fill(tf.stack(pad_shape), tf.cast(fill_value, tensor.dtype))
+    tf.slice(tensor, tf.zeros_like(shape), shape),
+    tf.fill(tf.stack(pad_shape), tf.cast(fill_value, tensor.dtype))
   ], axis)
 
   # Update shape.
-  new_shape = tensor.get_shape().as_list()  # A copy is being made.
+  new_shape = tensor.shape.as_list()  # A copy is being made.
   new_shape[axis] = new_size
-  resized.set_shape(new_shape)
+  resized = tf.ensure_shape(resized, new_shape)
   return resized
 
 
 def _process_segment_and_label(video_matrix,
-                       num_frames,
-                       contexts,
-                       segment_labels,
-                       segment_size,
-                       num_classes) -> Dict[str, tf.Tensor]:
-
+                               num_frames,
+                               contexts,
+                               segment_labels,
+                               segment_size,
+                               num_classes) -> Dict[str, tf.Tensor]:
   """Processes a batched Tensor of frames.
   The same parameters used in process should be used here.
   Args:
+    video_matrix:
+    num_frames:
+    contexts:
+    segment_labels:
+    segment_size:
+    num_classes:
 
   Returns:
     output: dictionary containing batch information
@@ -82,7 +82,6 @@ def _process_segment_and_label(video_matrix,
     # the same segment_size.
     uniq_start_times, seg_idxs = tf.unique(start_times,
                                            out_idx=tf.dtypes.int64)
-    # TODO(zhengxu): Ensure the segment_sizes are all same.
     # Range gather matrix, e.g., [[0,1,2],[1,2,3]] for segment_size == 3.
     range_mtx = tf.expand_dims(uniq_start_times, axis=-1) + tf.expand_dims(
       tf.range(0, segment_size, dtype=tf.int64), axis=0)
@@ -140,10 +139,9 @@ def _process_segment_and_label(video_matrix,
 
   return output_dict
 
+
 def _postprocess_image(image,
-                       is_training: bool = True,
-                       num_frames: int = 32,
-                       num_test_clips: int = 1) -> tf.Tensor:
+                       num_frames: int = 32) -> tf.Tensor:
   """Processes a batched Tensor of frames.
   The same parameters used in process should be used here.
   Args:
@@ -151,91 +149,87 @@ def _postprocess_image(image,
     is_training: Whether or not in training mode. If True, random sample, crop
       and left right flip is used.
     num_frames: Number of frames per subclip.
-    num_test_clips: Number of test clips (1 by default). If more than 1, this
-      will sample multiple linearly spaced clips within each video at test time.
-      If 1, then a single clip in the middle of the video is sampled. The clips
-      are aggreagated in the batch dimension.
   Returns:
     Processed frames. Tensor of shape
       [batch * num_test_clips, num_frames, height, width, 3].
   """
-  if num_test_clips > 1 and not is_training:
-    # In this case, multiple clips are merged together in batch dimension which
-    # will be B * num_test_clips.
-    image = tf.reshape(
-        image, (-1, num_frames, image.shape[2], image.shape[3], image.shape[4]))
+
+  image = tf.reshape(
+    image, (-1, num_frames, image.shape[2], image.shape[3], image.shape[4]))
 
   return image
 
+
 def _get_video_matrix(features, feature_size, max_frames,
-                       max_quantized_value, min_quantized_value):
-    """Decodes features from an input string and quantizes it.
+                      max_quantized_value, min_quantized_value):
+  """Decodes features from an input string and quantizes it.
 
-       Args:
-         features: raw feature values
-         feature_size: length of each frame feature vector
-         max_frames: number of frames (rows) in the output feature_matrix
-         max_quantized_value: the maximum of the quantized value.
-         min_quantized_value: the minimum of the quantized value.
+     Args:
+       features: raw feature values
+       feature_size: length of each frame feature vector
+       max_frames: number of frames (rows) in the output feature_matrix
+       max_quantized_value: the maximum of the quantized value.
+       min_quantized_value: the minimum of the quantized value.
 
 
-       Returns:
-         feature_matrix: matrix of all frame-features
-         num_frames: number of frames in the sequence
-       """
-    decoded_features = tf.reshape(
-        tf.cast(tf.io.decode_raw(features, tf.uint8), tf.float32), #tf.decode_raw -> tf.io.decode_raw
-        [-1, feature_size])
+     Returns:
+       feature_matrix: matrix of all frame-features
+       num_frames: number of frames in the sequence
+     """
+  decoded_features = tf.reshape(
+    tf.cast(tf.io.decode_raw(features, tf.uint8), tf.float32),  # tf.decode_raw -> tf.io.decode_raw
+    [-1, feature_size])
 
-    num_frames = tf.minimum(tf.shape(decoded_features)[0], max_frames)
-    feature_matrix = utils.Dequantize(decoded_features, max_quantized_value,
-                                      min_quantized_value)
-    feature_matrix = resize_axis(feature_matrix, 0, max_frames)
-    return feature_matrix, num_frames
+  num_frames = tf.minimum(tf.shape(decoded_features)[0], max_frames)
+  feature_matrix = utils.Dequantize(decoded_features, max_quantized_value,
+                                    min_quantized_value)
+  feature_matrix = resize_axis(feature_matrix, 0, max_frames)
+  return feature_matrix, num_frames
+
 
 def _concat_features(features, feature_names, feature_sizes,
-                    max_frames, max_quantized_value, min_quantized_value):
-    '''loads (potentially) different types of features and concatenates them
+                     max_frames, max_quantized_value, min_quantized_value):
+  '''loads (potentially) different types of features and concatenates them
 
-        Args:
-            features: raw feature values
-            feature_names: list of feature names
-            feature_sizes: list of features sizes
-            max_frames:
-            max_quantized_value:
-            min_quantized_value:
+      Args:
+          features: raw feature values
+          feature_names: list of feature names
+          feature_sizes: list of features sizes
+          max_frames:
+          max_quantized_value:
+          min_quantized_value:
 
-        Returns:
-            video_matrix: different features concatenated
-            num_frames: the number of frames in the video
-    '''
+      Returns:
+          video_matrix: different features concatenated
+          num_frames: the number of frames in the video
+  '''
 
-    num_features = len(feature_names)
-    assert num_features > 0, "No feature selected: feature_names is empty!"
+  num_features = len(feature_names)
+  assert num_features > 0, "No feature selected: feature_names is empty!"
 
-    assert len(feature_names) == len(feature_sizes), (
-        "length of feature_names (={}) != length of feature_sizes (={})".format(
-            len(feature_names), len(feature_sizes)))
+  assert len(feature_names) == len(feature_sizes), (
+    "length of feature_names (={}) != length of feature_sizes (={})".format(
+      len(feature_names), len(feature_sizes)))
 
-    num_frames = -1  # the number of frames in the video
-    feature_matrices = [None] * num_features  # an array of different features
-    for feature_index in range(num_features):
-        feature_matrix, num_frames_in_this_feature = _get_video_matrix(
-            features[feature_names[feature_index]],
-            feature_sizes[feature_index], max_frames,
-            max_quantized_value, min_quantized_value)
-        if num_frames == -1:
-            num_frames = num_frames_in_this_feature
+  num_frames = -1  # the number of frames in the video
+  feature_matrices = [None] * num_features  # an array of different features
+  for feature_index in range(num_features):
+    feature_matrix, num_frames_in_this_feature = _get_video_matrix(
+      features[feature_names[feature_index]],
+      feature_sizes[feature_index], max_frames,
+      max_quantized_value, min_quantized_value)
+    if num_frames == -1:
+      num_frames = num_frames_in_this_feature
 
-        feature_matrices[feature_index] = feature_matrix
+    feature_matrices[feature_index] = feature_matrix
 
-    # cap the number of frames at self.max_frames
-    num_frames = tf.minimum(num_frames, max_frames)
+  # cap the number of frames at self.max_frames
+  num_frames = tf.minimum(num_frames, max_frames)
 
-    # concatenate different features
-    video_matrix = tf.concat(feature_matrices, 1)
+  # concatenate different features
+  video_matrix = tf.concat(feature_matrices, 1)
 
-    return video_matrix, num_frames
+  return video_matrix, num_frames
 
 
 class Decoder(decoder.Decoder):
@@ -243,39 +237,36 @@ class Decoder(decoder.Decoder):
 
   def __init__(self,
                input_params: exp_cfg.DataConfig,
-               # image_key: str = IMAGE_KEY,
-               # label_key: str = LABEL_KEY
                ):
 
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
     self._context_features = {
-        "id": tf.io.FixedLenFeature([], tf.string),
+      "id": tf.io.FixedLenFeature([], tf.string),
     }
     if self._segment_labels:
       self._context_features.update({
-          # There is no need to read end-time given we always assume the segment
-          # has the same size.
-          "segment_labels": tf.io.VarLenFeature(tf.int64),
-          "segment_start_times": tf.io.VarLenFeature(tf.int64),
-          "segment_scores": tf.io.VarLenFeature(tf.float32)
+        # There is no need to read end-time given we always assume the segment
+        # has the same size.
+        "segment_labels": tf.io.VarLenFeature(tf.int64),
+        "segment_start_times": tf.io.VarLenFeature(tf.int64),
+        "segment_scores": tf.io.VarLenFeature(tf.float32)
       })
     else:
       self._context_features.update({"labels": tf.io.VarLenFeature(tf.int64)})
-    
-    self._sequence_features = {
-        feature_name: tf.io.FixedLenSequenceFeature([], dtype=tf.string)
-        for feature_name in self._feature_names
-    }
 
+    self._sequence_features = {
+      feature_name: tf.io.FixedLenSequenceFeature([], dtype=tf.string)
+      for feature_name in self._feature_names
+    }
 
   def decode(self, serialized_example):
     """Parses a single tf.Example into image and label tensors."""
 
     contexts, features = tf.io.parse_single_sequence_example(
-        serialized_example,
-        context_features=self._context_features,
-        sequence_features=self._sequence_features)
+      serialized_example,
+      context_features=self._context_features,
+      sequence_features=self._sequence_features)
 
     return contexts, features
 
@@ -291,16 +282,10 @@ class Parser(parser.Parser):
                contexts,
                features,
                input_params: exp_cfg.DataConfig,
-               # image_key: str = IMAGE_KEY,
-               # label_key: str = LABEL_KEY,
                max_quantized_value=2,
                min_quantized_value=-2,
                ):
-
     self._num_classes = input_params.num_classes
-    # self._image_key = image_key
-    # self._label_key = label_key
-
     self._segment_size = input_params.segment_size
     self._segment_labels = input_params.segment_labels
     self._feature_names = input_params.feature_names
@@ -311,45 +296,35 @@ class Parser(parser.Parser):
     self.features = features
     self.contexts = contexts
 
-  # loads (potentially) different types of features and concatenates them
+    # loads (potentially) different types of features and concatenates them
     self.video_matrix, self.num_frames = _concat_features(self.features, self._feature_names, self._feature_sizes,
-                                                self._max_frames, self._max_quantized_value, self._min_quantized_value)
+                                                          self._max_frames, self._max_quantized_value,
+                                                          self._min_quantized_value)
 
-
-  def _parse_train_data(self): #  -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
+  def _parse_data(self):  # -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
     """Parses data for training."""
-    output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
+    output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels,
+                                             self._segment_size, self._num_classes)
 
-    return output_dict #batched
-
-  def _parse_eval_data(self): #  -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
-    """Parses data for evaluation."""
-    output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels, self._segment_size, self._num_classes)
-
-    return output_dict
+    return output_dict  # batched
 
 
 class PostBatchProcessor(object):
   """Processes a video and label dataset which is batched."""
 
   def __init__(self, input_params: exp_cfg.DataConfig):
-
     self._segment_labels = input_params.segment_labels
     self._is_training = input_params.is_training
     self._num_test_clips = input_params.num_test_clips
 
-
   def __call__(
-      self, batched_data,
-      contexts: Dict[str, tf.io.VarLenFeature(tf.int64)]) -> Dict[str, tf.Tensor]:
-
+          self, batched_data,
+          contexts: Dict[str, tf.io.VarLenFeature(tf.int64)]) -> Dict[str, tf.Tensor]:
     image = batched_data["video_matrix"]
     num_frames = batched_data["num_frames"]
     postprocessed_image = _postprocess_image(
       image=image,
-      is_training=self._is_training,
       num_frames=num_frames,
-      num_test_clips=self._num_test_clips
     )
     batched_data["video_matrix"] = postprocessed_image
 

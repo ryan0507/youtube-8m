@@ -123,7 +123,7 @@ class YT8MTask(base_task.Task):
     return metrics
 
   def process_metrics(self, metrics, labels, outputs):
-    '''Prpcesses metrics'''
+    '''Processes metrics'''
     metrics['map_calculator'].accumulate(outputs, labels)
     metrics['global_ap_calculator'].accumulate(outputs,labels)
 
