@@ -42,6 +42,8 @@ def yt8m(is_training):
 
 class YT8MModel(hyperparams.Config):
   """The model config."""
+  num_classes,
+  num_frames,
   iterations : int = 30
   cluster_size : int = 8192
   hidden_size : int = 1024
@@ -50,6 +52,7 @@ class YT8MModel(hyperparams.Config):
   is_training : bool = True
   activation : str = "sigmoid"
   pooling_method : str = "max"
+  yt8m_agg_classifier_model : str = "MoeModel"
 
 class Losses(hyperparams.Config):
   name = 'binary_crossentropy'

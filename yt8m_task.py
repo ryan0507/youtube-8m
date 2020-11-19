@@ -45,17 +45,9 @@ class YT8MTask(base_task.Task):
     #model configuration
     model_config = self.task_config.model
     model = YT8MModel(
-               num_frames=model_config.num_frames,
-               iterations=model_config.iterations,
-               cluster_size=model_config.cluster_size,
-               hidden_size=model_config.hidden_size,
-               add_batch_norm=model_config.add_batch_norm,
-               sample_random_frames=model_config.sample_random_frames,
-               is_training=model_config.is_training,
-               activation=model_config.activtion,
-               pooling_method=model_config.pooling_method,
-               input_specs=input_specs,
-               )
+              input_params=model_config,
+              input_specs=input_specs,
+              )
     return model
 
   def build_inputs(self, params: yt8m_cfg.DataConfig, input_context=None):
