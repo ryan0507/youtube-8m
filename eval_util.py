@@ -217,7 +217,7 @@ class EvaluationMetrics(object):
         aps (default nan).
     """
     if self.num_examples <= 0:
-      raise ValueError("total_sample must be positive.")
+       raise ValueError("total_sample must be positive.")
     avg_hit_at_one = self.sum_hit_at_one / self.num_examples
     avg_perr = self.sum_perr / self.num_examples
     avg_loss = self.sum_loss / self.num_examples
