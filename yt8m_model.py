@@ -41,8 +41,8 @@ class YT8MModel(tf.keras.Model):
       'pooling_method' : input_params.pooling_method,
       'yt8m_agg_classifier_model' : input_params.yt8m_agg_classifier_model
     }
-    self._num_classes = num_classes  #TODO: get from reader
-    self._num_frames = num_frames    #TODO: get from reader
+    self._num_classes = num_classes
+    self._num_frames = num_frames
     self._input_specs = input_specs
     self._act_fn = self.ACT_FN_MAP.get(input_params.activation)
 
