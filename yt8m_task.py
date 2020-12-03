@@ -22,9 +22,9 @@ from official.core import task_factory
 from official.modeling import tf_utils
 from official.vision.beta.projects.yt8m.dataloaders import yt8m_input
 from official.vision.beta.modeling import factory_3d
-from yt8m_model import YT8MModel
-import eval_util
-from configs import yt8m as yt8m_cfg
+from official.vision.beta.projects.yt8m.yt8m_model import YT8MModel
+from official.vision.beta.projects.yt8m.eval_utils import eval_util
+from official.vision.beta.projects.yt8m.configs import yt8m as yt8m_cfg
 
 
 @task_factory.register_task_cls(yt8m_cfg.YT8MTask)
@@ -57,14 +57,13 @@ class YT8MTask(base_task.Task):
     decoder = yt8m_input.Decoder()
     decoder_fn = decoder.decode
     parser = yt8m_input.Parser(input_params=params)
-    postprocess_fn = yt8m_input.PostBatchProcessor(params)
 
     reader = input_reader.InputReader(
         params,
         dataset_fn=tf.data.TFRecordDataset,
         decoder_fn=decoder_fn,
-        parser_fn=parser.parse_fn(params.is_training),
-        postprocess_fn=postprocess_fn)
+        parser_fn=parser.parse_fn(params.is_training)
+    )
 
     dataset = reader.read(input_context=input_context)
 
@@ -113,7 +112,6 @@ class YT8MTask(base_task.Task):
 
   def train_step(self, inputs, model, optimizer, metrics=None):
     """Does forward and backward.
-
     Args:
       inputs: a dictionary of input tensors.
             output_dict = {
@@ -125,7 +123,6 @@ class YT8MTask(base_task.Task):
       model: the model, forward pass definition.
       optimizer: the optimizer for this training step.
       metrics: a nested structure of metrics objects.
-
     Returns:
       A dictionary of logs.
     """

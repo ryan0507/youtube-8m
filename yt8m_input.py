@@ -148,7 +148,6 @@ def _process_segment_and_label(video_matrix,
                                 default_value=False,
                                 validate_indices=False)
 
-    # YT8M DATA IS ONLY BATCHED HERE.
     # convert to batch format.
     batch_video_ids = tf.expand_dims(contexts["id"], 0)
     batch_video_matrix = tf.expand_dims(video_matrix, 0)
@@ -161,30 +160,11 @@ def _process_segment_and_label(video_matrix,
     "video_matrix": batch_video_matrix,
     "labels": batch_labels,
     "num_frames": batch_frames,
-    "num_classes": num_classes
   }
   if batch_label_weights is not None:
     output_dict["label_weights"] = batch_label_weights
 
   return output_dict
-
-
-def _postprocess_image(image,
-                       num_frames: int = 32) -> tf.Tensor:
-  """Processes a batched Tensor of frames.
-  The same parameters used in process should be used here.
-  Args:
-    image: Input Tensor of shape [batch, timesteps, height, width, 3].
-    num_frames: Number of frames per subclip.
-  Returns:
-    Processed frames. Tensor of shape
-      [batch * num_test_clips, num_frames, height, width, 3].
-  """
-
-  image = tf.reshape(
-    image, (-1, num_frames, image.shape[2], image.shape[3], image.shape[4]))
-
-  return image
 
 
 def _get_video_matrix(features, feature_size, max_frames,
@@ -335,7 +315,7 @@ class Parser(parser.Parser):
     self.video_matrix = sampler(self.video_matrix, self.num_frames, self.stride, self.seed)
     output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels,
                                              self._segment_size, self._num_classes)
-    return output_dict  # batched
+    return output_dict
 
   def _parse_eval_data(self):  # -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
     """Parses data for training."""
@@ -343,25 +323,3 @@ class Parser(parser.Parser):
                                                self._segment_size, self._num_classes)
 
     return output_dict  # batched
-
-
-class PostBatchProcessor(object):
-  """Processes a video and label dataset which is batched."""
-
-  def __init__(self, input_params: exp_cfg.DataConfig):
-    self._segment_labels = input_params.segment_labels
-    self._is_training = input_params.is_training
-    self._num_test_clips = input_params.num_test_clips
-
-  def __call__(
-          self, batched_data,
-          contexts: Dict[str, tf.io.VarLenFeature(tf.int64)]) -> Dict[str, tf.Tensor]:
-    image = batched_data["video_matrix"]
-    num_frames = batched_data["num_frames"]
-    postprocessed_image = _postprocess_image(
-      image=image,
-      num_frames=num_frames,
-    )
-    batched_data["video_matrix"] = postprocessed_image
-
-    return batched_data
