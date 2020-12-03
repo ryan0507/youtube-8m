@@ -148,6 +148,7 @@ def _process_segment_and_label(video_matrix,
                                 default_value=False,
                                 validate_indices=False)
 
+    # YT8M DATA IS ONLY BATCHED HERE.
     # convert to batch format.
     batch_video_ids = tf.expand_dims(contexts["id"], 0)
     batch_video_matrix = tf.expand_dims(video_matrix, 0)
@@ -160,6 +161,7 @@ def _process_segment_and_label(video_matrix,
     "video_matrix": batch_video_matrix,
     "labels": batch_labels,
     "num_frames": batch_frames,
+    "num_classes": num_classes
   }
   if batch_label_weights is not None:
     output_dict["label_weights"] = batch_label_weights
@@ -333,7 +335,7 @@ class Parser(parser.Parser):
     self.video_matrix = sampler(self.video_matrix, self.num_frames, self.stride, self.seed)
     output_dict = _process_segment_and_label(self.video_matrix, self.num_frames, self.contexts, self._segment_labels,
                                              self._segment_size, self._num_classes)
-    return output_dict
+    return output_dict  # batched
 
   def _parse_eval_data(self):  # -> Tuple[Dict[str, tf.Tensor], tf.Tensor]
     """Parses data for training."""

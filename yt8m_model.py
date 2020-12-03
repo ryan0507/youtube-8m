@@ -15,6 +15,8 @@ class YT8MModel(tf.keras.Model):
   def __init__(self,
                input_params: yt8m_cfg.YT8MModel,
                input_specs=layers.InputSpec(shape=[None, None, None]),
+               num_frames,
+               num_classes,
                **kwargs):
     """YT8M initialization function.
       Args:
@@ -27,8 +29,8 @@ class YT8MModel(tf.keras.Model):
     self._self_setattr_tracking = False
     self._config_dict = {
       'input_specs': input_specs,
-      'num_classes' : input_params.num_classes,
-      'num_frames' : input_params.num_frames,
+      'num_classes' : num_classes,
+      'num_frames' : num_frames,
       'iterations' : input_params.iterations,
       'cluster_size' : input_params.cluster_size,
       'hidden_size' : input_params.hidden_size,
@@ -39,8 +41,8 @@ class YT8MModel(tf.keras.Model):
       'pooling_method' : input_params.pooling_method,
       'yt8m_agg_classifier_model' : input_params.yt8m_agg_classifier_model
     }
-    self._num_classes = input_params.num_classes  #TODO: get from reader
-    self._num_frames = input_params.num_frames    #TODO: get from reader
+    self._num_classes = num_classes  #TODO: get from reader
+    self._num_frames = num_frames    #TODO: get from reader
     self._input_specs = input_specs
     self._act_fn = self.ACT_FN_MAP.get(input_params.activation)
 

@@ -20,7 +20,8 @@ from official.core import base_task
 from official.core import input_reader
 from official.core import task_factory
 from official.modeling import tf_utils
-from official.vision.beta.dataloaders import video_input
+# from official.vision.beta.dataloaders import video_input
+from official.vision.beta.projects.yt8m.dataloaders import yt8m_input
 from official.vision.beta.modeling import factory_3d
 from yt8m_model import YT8MModel
 import average_precision_calculator as ap_calculator
@@ -32,7 +33,7 @@ from configs import yt8m as yt8m_cfg
 class YT8MTask(base_task.Task):
   """A task for video classification."""
 
-  def build_model(self):
+  def build_model(self, num_classes, num_frames):
     """Builds video classification model."""
     common_input_shape = [
         d1 if d1 == d2 else None
@@ -47,16 +48,18 @@ class YT8MTask(base_task.Task):
     model = YT8MModel(
               input_params=model_config,
               input_specs=input_specs,
+              num_frames=num_frames,
+              num_classes=num_classes
               )
     return model
 
   def build_inputs(self, params: yt8m_cfg.DataConfig, input_context=None):
     """Builds classification input."""
 
-    decoder = video_input.Decoder()
+    decoder = yt8m_input.Decoder()
     decoder_fn = decoder.decode
-    parser = video_input.Parser(input_params=params)
-    postprocess_fn = video_input.PostBatchProcessor(params)
+    parser = yt8m_input.Parser(input_params=params)
+    postprocess_fn = yt8m_input.PostBatchProcessor(params)
 
     reader = input_reader.InputReader(
         params,
@@ -100,12 +103,7 @@ class YT8MTask(base_task.Task):
       top_n: A positive Integer specifying the average precision at n, or None
         to use all provided data points.
     """
-    # metrics = [
-    #   map_calculator.MeanAveragePrecisionCalculator(
-    #     num_class=self.task_config.num_classes,
-    #     top_n=self.task_config.top_n),
-    #   ap_calculator.AveragePrecisionCalculator()
-    # ]
+
     metrics = {
       'map_calculator' : map_calculator.MeanAveragePrecisionCalculator(
         num_class=self.task_config.num_classes,
@@ -127,18 +125,29 @@ class YT8MTask(base_task.Task):
     """Does forward and backward.
     Args:
       inputs: a dictionary of input tensors.
+            output_dict = {
+          "video_ids": batch_video_ids,
+          "video_matrix": batch_video_matrix,
+          "labels": batch_labels,
+          "num_frames": batch_frames,
+          }
       model: the model, forward pass definition.
       optimizer: the optimizer for this training step.
       metrics: a nested structure of metrics objects.
     Returns:
       A dictionary of logs.
     """
-    features, labels = inputs
+    features, labels = inputs['video_matrix'], inputs['labels']
+    video_ids, num_frames = inputs['video_ids'], inputs['num_frames']
 
     num_replicas = tf.distribute.get_strategy().num_replicas_in_sync
     with tf.GradientTape() as tape:
+      outputs = model(features, training=True)
       outputs =
-      losses = self.build_losses(
+
+      # Computes per-replica loss
+      loss = self.build_losses(
+        model_outputs=outputs,
 
       )
 
