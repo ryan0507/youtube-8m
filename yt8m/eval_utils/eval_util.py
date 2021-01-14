@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Provides functions to help with evaluating models."""
-import official.vision.beta.projects.yt8m.eval_utils.average_precision_calculator as ap_calculator
-import official.vision.beta.projects.yt8m.eval_utils.mean_average_precision_calculator as map_calculator
+from official.vision.beta.projects.yt8m.eval_utils import average_precision_calculator as ap_calculator
+from official.vision.beta.projects.yt8m.eval_utils import mean_average_precision_calculator as map_calculator
 import numpy
 from tensorflow.python.platform import gfile
 
@@ -166,6 +166,7 @@ class EvaluationMetrics(object):
     self.global_ap_calculator = ap_calculator.AveragePrecisionCalculator()
     self.top_k = top_k
     self.num_examples = 0
+
 
   def accumulate(self, predictions, labels, loss):
     """Accumulate the metrics calculated locally for this mini-batch.

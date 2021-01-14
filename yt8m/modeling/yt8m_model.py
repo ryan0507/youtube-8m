@@ -1,17 +1,12 @@
 import tensorflow as tf
-from official.vision.beta.projects.yt8m import yt8m_model_utils as utils
 from official.vision.beta.projects.yt8m.configs import yt8m as yt8m_cfg
-from official.vision.beta.projects.yt8m import yt8m_agg_models
+from official.vision.beta.projects.yt8m.modeling import yt8m_agg_models, yt8m_model_utils as utils
+from official.modeling import tf_utils
 
 layers = tf.keras.layers
 
 
 class YT8MModel(tf.keras.Model):
-    ACT_FN_MAP = {
-        "sigmoid": tf.math.sigmoid,
-        "relu6": tf.nn.relu6,
-    }
-
     def __init__(self,
                  input_params: yt8m_cfg.YT8MModel,
                  num_frames=32,
@@ -31,24 +26,14 @@ class YT8MModel(tf.keras.Model):
             'input_specs': input_specs,
             'num_classes': num_classes,
             'num_frames': num_frames,
-            'iterations': input_params.iterations,
-            'cluster_size': input_params.cluster_size,
-            'hidden_size': input_params.hidden_size,
-            'add_batch_norm': input_params.add_batch_norm,
-            'sample_random_frames' : input_params.sample_random_frames,
-            'is_training': input_params.is_training,
-            'activation': input_params.activation,
-            'pooling_method': input_params.pooling_method,
-            'yt8m_agg_classifier_model': input_params.yt8m_agg_classifier_model
+            'input_params': input_params
         }
         self._num_classes = num_classes
         self._num_frames = num_frames
         self._input_specs = input_specs
-        self._act_fn = self.ACT_FN_MAP.get(input_params.activation)
+        self._act_fn = tf_utils.get_activation(input_params.activation)
 
-        inputs = tf.keras.Input(shape=self._input_specs.shape, batch_size=2)
-        print("inputs {}".format(inputs))
-        # print(input_params.iterations)
+        inputs = tf.keras.Input(shape=self._input_specs.shape)
 
         num_frames = tf.cast(tf.expand_dims([self._num_frames], 1), tf.float32)
         if input_params.sample_random_frames:
@@ -56,11 +41,16 @@ class YT8MModel(tf.keras.Model):
         else:
             model_input = utils.SampleRandomSequence(inputs, num_frames, input_params.iterations)
 
-        print(model_input)
         max_frames = model_input.shape.as_list()[1]
         feature_size = model_input.shape.as_list()[2]
-        print(feature_size)
-        reshaped_input = tf.reshape(model_input, [-1, feature_size])
+        print("---------------- YT8M_MODEL.PY ----------------")
+        print("after SampleRandom---: ", model_input.shape) #[None, 30, 1152]
+        print("---------------- YT8M_MODEL.PY ----------------")
+
+        reshaped_input = tf.reshape(model_input, shape=[-1, feature_size])
+        print("---------------- YT8M_MODEL.PY ----------------")
+        print("after reshape [-1, feature_size]: ", reshaped_input.shape) #[None, 1152]
+        print("---------------- YT8M_MODEL.PY ----------------")
         tf.summary.histogram("input_hist", reshaped_input)
 
         if input_params.add_batch_norm:

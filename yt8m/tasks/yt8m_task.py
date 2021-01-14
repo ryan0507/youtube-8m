@@ -21,8 +21,7 @@ from official.core import input_reader
 from official.core import task_factory
 from official.modeling import tf_utils
 from official.vision.beta.projects.yt8m.dataloaders import yt8m_input
-from official.vision.beta.modeling import factory_3d
-from official.vision.beta.projects.yt8m.yt8m_model import YT8MModel
+from official.vision.beta.projects.yt8m.modeling.yt8m_model import YT8MModel
 from official.vision.beta.projects.yt8m.eval_utils import eval_util
 from official.vision.beta.projects.yt8m.configs import yt8m as yt8m_cfg
 
@@ -33,12 +32,17 @@ class YT8MTask(base_task.Task):
 
   def build_model(self, num_classes: int=3862, num_frames: int=32):
     """Builds video classification model."""
-    common_input_shape = [
-        d1 if d1 == d2 else None
-        for d1, d2 in zip(self.task_config.train_data.feature_shape,
-                          self.task_config.validation_data.feature_shape)
-    ]
+    # common_input_shape = [
+    #     d1 if d1 == d2 else None
+    #     for d1, d2 in zip(self.task_config.train_data.feature_sizes,
+    #                       self.task_config.validation_data.feature_sizes)
+    # ]
+    common_input_shape = [self.task_config.train_data.max_frames, sum(self.task_config.train_data.feature_sizes)] #TODO: revise
     input_specs = tf.keras.layers.InputSpec(shape=[None] + common_input_shape)
+    print("---------------- YT8M_TASK.PY ----------------")
+    print("input_specs", input_specs)
+    print("---------------- YT8M_TASK.PY ----------------")
+
     logging.info('Build model input %r', common_input_shape)
 
     #model configuration
@@ -54,7 +58,7 @@ class YT8MTask(base_task.Task):
   def build_inputs(self, params: yt8m_cfg.DataConfig, input_context=None):
     """Builds classification input."""
 
-    decoder = yt8m_input.Decoder()
+    decoder = yt8m_input.Decoder(input_params=params)
     decoder_fn = decoder.decode
     parser = yt8m_input.Parser(input_params=params)
 
@@ -92,7 +96,8 @@ class YT8MTask(base_task.Task):
 
     return total_loss
 
-  def build_metrics(self, num_classes, top_k=20, top_n=None, training=True):
+
+  def build_metrics(self, num_classes: int=3862, top_k=None, top_n=None, training=True):
     """Gets streaming metrics for training/validation.
        metric: mAP/gAP
       Args:
@@ -102,8 +107,11 @@ class YT8MTask(base_task.Task):
       top_n: A positive Integer specifying the average precision at n, or None
         to use all provided data points.
     """
+    top_k = self.task_config.top_k
+    top_n = self.task_config.top_n
     metrics = eval_util.EvaluationMetrics(num_classes, top_k=top_k, top_n=top_n)
-    return metrics
+    return [metrics.map_calculator, metrics.global_ap_calculator]
+
 
   def process_metrics(self, metrics, labels, outputs, loss):
     '''Processes metrics'''
